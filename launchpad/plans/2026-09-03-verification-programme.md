@@ -27,9 +27,10 @@ Buzz's checks feel broken. The evidence says something more specific, and more f
    endpoint returns `404` at `maintain` permission, and absence of readable data was taken as absence
    of configuration. What protection *requires* is not visible without admin, so the open question is
    "which checks are required today?", not "can we turn protection on?"
-4. **The one CODEOWNERS entry is inert** — GitHub's own validator reports `Unknown owner` for
-   `@block/buzz-oss-team` on this fork. Protection being on makes this *more* urgent, not less: if
-   code-owner review is required, it is being required of an owner that does not resolve.
+4. **The one CODEOWNERS entry is inert** — GitHub's validator reports `Unknown owner` for
+   `@block/buzz-oss-team`. **Out of scope: CODEOWNERS is not used and is not needed for Test
+   Automation.** It survives here only as a warning — enabling code-owner review against an invalid
+   owner locks the repository (INC-0006).
 5. **Trivia should never fail a gate.** Formatting auto-fix already exists and works. What is missing
    is the *policy*: an agent that finds a typo fixes it in place; gates fail only for behaviour,
    security, or verification integrity.
@@ -54,7 +55,8 @@ BUILD WITH      serina:build-change, from a Feature-level plan written per phase
 GATES           review-plan before building · review-code + review-tests per step
                 review-final before merge · qa explore mode applies
 BLOCKED-ON      Phase 0 decisions are HUMAN decisions. Do not resolve them yourself.
-                (h) required checks · (g) CODEOWNERS owners · (f) inherited surfaces.
+                (h) required checks · (f) inherited surfaces.
+                (g) CODEOWNERS owners is CLOSED — out of scope, not used.
 FIRST RULE      Before prescribing any mechanism, SEARCH FOR IT. Three times in one
                 session a plan proposed building something that already existed.
                 Record where it exists, or that a named search found nothing.
@@ -340,7 +342,7 @@ PRD, per `launchpad/AGENTS.md`: *"ADR is first on purpose: decisions masquerade 
 | # | Decision | Owner | Blocks |
 |---|---|---|---|
 | **(h)** | Does anyone in the cohort hold admin on the fork, and will they enable a ruleset? | **Jeff — `tucktuck101`** | Phase 5 |
-| **(g)** | Who are the valid CODEOWNERS? The current owner is `Unknown owner` on this fork | **Group** | Phase 5; moot if (h) is no |
+| ~~**(g)**~~ | ~~Who are the valid CODEOWNERS?~~ **CLOSED 2026-09-03 — out of scope.** CODEOWNERS is not used and is not needed for Test Automation. No owner decision is required | — | nothing |
 | **(f)** | Inherited surfaces: do we fix defects in inherited files (`desktop/`, `ci.yml`, `crates/`) inside our fork, or leave them alone? Divergence is the only option — we do not contribute upstream | **Group** | Phase 6 |
 | **(e)** | *Folded into (f)* — the docs-only Desktop E2E path filter edits inherited `ci.yml`, so it inherits the same decision | — | — |
 
@@ -435,9 +437,10 @@ So this phase is not "turn protection on". It is:
 - **Find out what is required today.** Someone with admin reads the protection settings: which status
   checks are required, whether reviews are required, whether code-owner review is on. This is a
   five-minute question for whoever holds admin, and it determines everything else here
-- **Fix `.github/CODEOWNERS` first.** Its sole owner is `Unknown owner` on this fork, so every entry
-  is inert. If code-owner review is already required, it is being required of an owner that does not
-  resolve — worth checking early, because that failure mode is silent
+- **Do NOT enable code-owner review.** CODEOWNERS is out of scope for this programme (see *Two
+  findings from the first trial*). Its sole owner does not resolve, and enabling the rule against an
+  invalid owner locks the repository — INC-0006. If the required-checks audit reveals code-owner
+  review is *already* on, that is an incident to raise immediately, not a step to build on
 - **Add the checks built in Phases 2–4** to the required list
 - **Path guard** for agent PRs touching verification config, fail-closed
 
@@ -502,6 +505,64 @@ oversight later.
 | nextest JUnit at a fixed path | `ci.yml` invokes `cargo nextest run` many times; one configured path means later runs overwrite earlier reports and the artifact shows a fraction of the run as though it were the whole |
 | Human-approval status check | Runs on `pull_request`, not `pull_request_review`, so an approval would never re-trigger it. Needs a different design if it returns |
 | Quarantine file feeding both runners | Source of the circular dependency, and no evidence yet that quarantine is needed. Revisit when a flake actually needs quarantining |
+
+---
+
+## Two findings from the first trial that change the programme
+
+Recorded 2026-09-03 from the lab-fork trial and from measuring the cohort repo's actual PR queue.
+Both are corrections to this document's own assumptions, not to the code.
+
+### 1. CODEOWNERS is OUT OF SCOPE — decided, not deferred
+
+**CODEOWNERS is not used at present, and is not part of the Test Automation work.** It is not
+necessary for it.
+
+| Scope | Verdict | Why |
+|---|---|---|
+| **Portable skill suite (Track A)** | 🎈 **bloat — removed entirely** | GitHub-specific, admin-gated, and about *who reviews* rather than *whether code works*. A verification suite depending on it cannot run on another forge or without admin, and gains nothing in test quality |
+| **Buzz programme (Track B)** | ⚠️ **demoted to a documented prerequisite** | Its only job here was stopping agents editing verification config unreviewed — and the Phase 5 path-guard already does that without admin and without a governance decision. Two mechanisms for one job |
+
+What survives is a **warning, not a workstream**: if anyone ever enables code-owner review on
+`launchpad-26/buzz`, CODEOWNERS must be fixed *first*, or the repository locks itself and the fix for
+CODEOWNERS becomes unmergeable (INC-0006). Nothing in this programme should be built on it.
+
+The trial that produced this was still worth running. **A trial whose conclusion is "do not build
+this" is a successful trial** — it found a live operational trap and cost one afternoon in a sandbox
+rather than a locked repository on a working day.
+
+### 2. The programme's premise is in question — the bottleneck may not be checks
+
+Measured 2026-09-03 across four sampled open PRs in `launchpad-26/buzz`:
+
+```
+#2065 #2063 #2021 #1969   all: reviewDecision=REVIEW_REQUIRED, mergeState=BLOCKED
+                          reviews present: github-actions COMMENTED only
+                          human approvals: ZERO
+```
+
+21 PRs are open. Every one sampled is blocked **waiting for a human approval that has not come** —
+not on a failing check, not on CODEOWNERS, not on tooling.
+
+This is the verification bottleneck the research describes, showing up in this repo: agents produce
+changes faster than humans can review them. And it raises a question this document does not answer:
+
+> **Is the highest-value work making checks better, or making review faster?**
+
+Everything designed here assumes the first. The evidence points at the second. Worse, the two
+interact badly — **stricter gates on a 21-deep unreviewed queue make the queue longer, not the code
+better.**
+
+**This is not resolved.** It belongs on the table before Phase 1 starts, because it could reshape the
+programme rather than adjust it. Two honest readings:
+
+- *Checks still matter* — a red queue is worse than a slow one, and legible checks reduce review
+  effort per PR by making problems obvious before a human looks.
+- *Checks are the wrong lever* — if nothing merges for want of reviewers, gate quality is not the
+  constraint, and effort should go to review throughput: batching, auto-merge for low-risk changes,
+  or more reviewers.
+
+Recorded as REV-0004. **A builder must not silently pick one.**
 
 ---
 
