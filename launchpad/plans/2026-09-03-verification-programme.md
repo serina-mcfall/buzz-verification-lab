@@ -58,6 +58,11 @@ BLOCKED-ON      Phase 0 decisions are HUMAN decisions. Do not resolve them yours
 FIRST RULE      Before prescribing any mechanism, SEARCH FOR IT. Three times in one
                 session a plan proposed building something that already existed.
                 Record where it exists, or that a named search found nothing.
+SECOND RULE     Three states, never two: found / absent / could-not-determine.
+                Never let "I could not check" become "it is not there" (INC-0006).
+TRIAL FIRST     Phases 3-5 are proven in the lab fork before landing here. Every
+                mechanism exits its trial with a verdict: keep / fix / drop /
+                blocked. Nothing ships on `blocked`.
 NEVER           add retries, sleeps or timeout bumps to make a failing test pass
                 weaken or delete a test without a `test-change:` declaration
                 edit lefthook.yml, CODEOWNERS or workflows without human review
@@ -497,6 +502,118 @@ oversight later.
 | nextest JUnit at a fixed path | `ci.yml` invokes `cargo nextest run` many times; one configured path means later runs overwrite earlier reports and the artifact shows a fraction of the run as though it were the whole |
 | Human-approval status check | Runs on `pull_request`, not `pull_request_review`, so an approval would never re-trigger it. Needs a different design if it returns |
 | Quarantine file feeding both runners | Source of the circular dependency, and no evidence yet that quarantine is needed. Revisit when a flake actually needs quarantining |
+
+---
+
+## Testing approach — prove it in a lab fork first
+
+**Nothing in Phases 3–5 lands in `launchpad-26/buzz` until it has been run somewhere it can safely
+fail.** That place is a personal fork, not a branch.
+
+### Why a fork and not a branch
+
+A branch inside `launchpad-26/buzz` cannot test the phases that matter most:
+
+| Phase | On a branch in the cohort repo | On a personal fork |
+|---|---|---|
+| 1 — audit | ✅ read-only, no isolation needed | — |
+| 2 — checker fixes | ✅ Python + unit tests, local | — |
+| 3 — shellcheck / actionlint | ⚠️ works, but spends cohort CI minutes and clutters their Actions tab | ✅ isolated |
+| 4 — guards reacting to PR events | ⚠️ needs real PRs opened against the cohort repo | ✅ open bad PRs freely |
+| **5 — protection, required checks, CODEOWNERS** | ❌ **impossible — needs `admin`; Serina has `maintain`** | ✅ **you are admin of your own fork** |
+
+Phase 5 is the phase with the most unknowns and it is the one that cannot be rehearsed anywhere
+else. That decides it.
+
+A fork also beats a minimal scratch repo: it carries the real 121 cohort test files, 30 shell
+scripts and 10 workflows, so a finding transfers directly. *"It worked on a toy repo"* is how the
+first version of this plan got into trouble.
+
+### Setup
+
+```bash
+gh repo fork launchpad-26/buzz --clone=false --fork-name buzz-verification-lab
+```
+
+Then in the fork: enable Actions, enable branch protection on `launchpad`, set CODEOWNERS to
+yourself — which is a **valid** owner there, unlike the inert org-team entry — and open deliberately
+bad PRs against yourself.
+
+Three things to expect:
+
+1. **Actions are disabled on new forks by default.** Enable them in Settings → Actions.
+2. **Secrets do not copy.** Some workflows will fail for unrelated reasons. That is useful noise: it
+   tells you which checks depend on secrets, which matters when deciding what can be *required*.
+3. **PRs default to targeting upstream.** Change the base to your own fork, or a test PR proposes
+   itself to the cohort.
+
+### What the fork cannot tell you — state this before trusting it
+
+The fork has no fleet: no concurrent agent sessions, no in-flight PRs from other people, no cohort
+CI queue. So it validates **mechanism** well and **rollout risk not at all**. Enabling required
+checks on a busy branch mid-fleet remains an unrehearsed scheduling problem — the fork will not
+surface it, and a green trial must not be read as saying otherwise.
+
+It also cannot tell you whether a check is *socially* tolerable. A guard that fires correctly but
+annoys five people is a failure the fork will report as a success.
+
+---
+
+## The trial log — what gets recorded while testing
+
+**Purpose: a verdict per mechanism, not a diary.** The record's own rule applies —
+*"a record where most events are `note` is a diary, not a dataset"*. Every entry must answer a
+question someone will actually ask at review time.
+
+### The five things tracked, and where each goes
+
+| What | Kind | Where |
+|---|---|---|
+| **What is being done** — a mechanism entering trial | `change` | `records/events.jsonl` |
+| **What breaks** — it failed, misfired, or blocked the wrong thing | `incident` | `records/events.jsonl` + prose doc if non-obvious |
+| **What is great / needs work / should go** | `review` with a `verdict` field | `records/events.jsonl` |
+| The running narrative | prose | `records/trials/<phase>-<mechanism>.md` |
+
+### Verdict vocabulary — exactly four values
+
+| Verdict | Means | Consequence |
+|---|---|---|
+| `keep` | Works, cost acceptable, signal clear | Ships to `launchpad-26/buzz` |
+| `fix` | Right idea, wrong implementation | Named defect + who fixes it, then re-trial |
+| `drop` | Cost exceeds value, or it does not work | Removed, **with the reason recorded** — a silently dropped mechanism reads as an oversight later |
+| `blocked` | Could not be tested here | Says what would test it. **Never counts as `keep`** |
+
+`blocked` exists specifically so that "we could not check" never quietly becomes "it is fine" —
+the exact failure that produced INC-0006.
+
+### What every `review` entry must carry
+
+Recorded with `--field`, so the whole evaluation is queryable rather than buried in prose:
+
+```
+--kind review --field verdict=keep|fix|drop|blocked
+             --field mechanism=<shellcheck|actionlint|test-mod-guard|…>
+             --field ci_seconds=<wall-clock added to the run>
+             --field false_positives=<count over the trial>
+             --field true_positives=<count over the trial>
+             --tags ci/<area>  --doc trials/<phase>-<mechanism>.md
+```
+
+**`false_positives` is the field that decides most verdicts.** A guard with real catches and zero
+false alarms is `keep`. One that cries wolf is `fix` or `drop` regardless of how correct it is in
+principle — because a gate people learn to ignore is the problem this programme exists to solve.
+
+### Reviewing it afterwards
+
+```bash
+<skill>/query.sh --kind review --format md      # every verdict, one table
+<skill>/query.sh --kind incident --open         # what broke and is still broken
+<skill>/query.sh --stats                        # human-detected ratio: did the checks catch it?
+```
+
+The exit gate for the whole trial: **every mechanism has a verdict, and no mechanism ships on
+`blocked`.** A phase whose trial produced no `drop` and no `fix` deserves suspicion — it more likely
+means the trial was too gentle than that the design was perfect.
 
 ---
 
