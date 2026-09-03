@@ -18,13 +18,18 @@ Buzz's checks feel broken. The evidence says something more specific, and more f
 
 1. **The code tests are mostly fine.** `ci.yml` failed 4 of its last 100 runs. All four were
    documentation-only PRs failing **Desktop browser tests** — a flake signature, not a code defect.
-2. **The noise is in the process checks.** The PR body check failed 9 of 25 runs; the issue body
-   check 5 of 7. A gate that is usually red teaches everyone to ignore red.
-3. **No check can actually block a merge.** The fork has zero branch protection, zero rulesets and
-   zero required status checks. Every red ✗ so far has been advisory. This is the single highest-value
-   fix in the programme.
+2. **The noise is in the process checks.** Sampled per workflow over their last 100 runs each: the
+   **PR body check failed 43/100**, the **issue body check 73/100**. A gate that is usually red
+   teaches everyone to ignore red. (An earlier draft said 9/25 and 5/7 — the right direction, but
+   drawn from a mixed-workflow sample too small to trust. Sample per workflow.)
+3. **Branch protection IS on** — `launchpad` reports `protected: true`. An earlier draft of this
+   document claimed the opposite; that was **wrong**, and the error is instructive: the protection
+   endpoint returns `404` at `maintain` permission, and absence of readable data was taken as absence
+   of configuration. What protection *requires* is not visible without admin, so the open question is
+   "which checks are required today?", not "can we turn protection on?"
 4. **The one CODEOWNERS entry is inert** — GitHub's own validator reports `Unknown owner` for
-   `@block/buzz-oss-team` on this fork.
+   `@block/buzz-oss-team` on this fork. Protection being on makes this *more* urgent, not less: if
+   code-owner review is required, it is being required of an owner that does not resolve.
 5. **Trivia should never fail a gate.** Formatting auto-fix already exists and works. What is missing
    is the *policy*: an agent that finds a typo fixes it in place; gates fail only for behaviour,
    security, or verification integrity.
@@ -49,7 +54,7 @@ BUILD WITH      serina:build-change, from a Feature-level plan written per phase
 GATES           review-plan before building · review-code + review-tests per step
                 review-final before merge · qa explore mode applies
 BLOCKED-ON      Phase 0 decisions are HUMAN decisions. Do not resolve them yourself.
-                (h) admin access · (g) CODEOWNERS owners · (f) upstream posture.
+                (h) required checks · (g) CODEOWNERS owners · (f) inherited surfaces.
 FIRST RULE      Before prescribing any mechanism, SEARCH FOR IT. Three times in one
                 session a plan proposed building something that already existed.
                 Record where it exists, or that a named search found nothing.
@@ -283,7 +288,7 @@ flowchart TD
 ## Phases
 
 **Reworked 2026-09-03 against the Codex review.** The previous seven-phase structure had a circular
-dependency, aimed its expensive mechanisms at upstream product code the cohort does not author, and
+dependency, aimed its expensive mechanisms at inherited product code the cohort does not author, and
 prescribed several mechanisms that already existed. This version is smaller, ordered so nothing
 depends on anything later, and aimed at surfaces the cohort owns.
 
@@ -299,7 +304,7 @@ flowchart LR
     P3["Phase 3<br/>COVER<br/>cohort surfaces"]
     P4["Phase 4<br/>GUARD<br/>agent change"]
     P5["Phase 5<br/>ENFORCE<br/>needs admin"]
-    P6["Upstream track<br/>file at block/buzz"]
+    P6["Inherited-surface track<br/>fix here or drop"]
     P7["Portable suite<br/>separate repo"]
 
     P1 --> P2
@@ -331,11 +336,11 @@ PRD, per `launchpad/AGENTS.md`: *"ADR is first on purpose: decisions masquerade 
 |---|---|---|---|
 | **(h)** | Does anyone in the cohort hold admin on the fork, and will they enable a ruleset? | **Jeff — `tucktuck101`** | Phase 5 |
 | **(g)** | Who are the valid CODEOWNERS? The current owner is `Unknown owner` on this fork | **Group** | Phase 5; moot if (h) is no |
-| **(f)** | Upstream posture: are upstream-surface findings filed at `block/buzz`, carried as fork divergence, or dropped? | **Group** | Phase 6 |
-| **(e)** | *Folded into (f)* — the docs-only Desktop E2E path filter edits upstream `ci.yml`, so it inherits the same decision | — | — |
+| **(f)** | Inherited surfaces: do we fix defects in inherited files (`desktop/`, `ci.yml`, `crates/`) inside our fork, or leave them alone? Divergence is the only option — we do not contribute upstream | **Group** | Phase 6 |
+| **(e)** | *Folded into (f)* — the docs-only Desktop E2E path filter edits inherited `ci.yml`, so it inherits the same decision | — | — |
 
 **Escalation rule.** If (f) is unanswered when Phase 4 completes, default to the narrowest reading —
-file upstream, change nothing in the fork — record it with its date, and reopen later.
+change nothing in inherited files — record it with its date, and reopen later.
 
 ---
 
@@ -383,7 +388,7 @@ The cohort authors Python, shell, workflows and documentation. That is where ver
 | 121 Python test files | CI exists but is path-filtered per area | close the gaps Phase 1 found |
 | `launchpad/scripts` logic | tests run; quality unmeasured | **mutation testing with `mutmut`, diff-scoped, advisory first** |
 
-**Mutation belongs here, not on `crates/**`.** The old plan ran mutation against upstream Rust the
+**Mutation belongs here, not on `crates/**`.** The old plan ran mutation against inherited Rust the
 cohort does not write. Python under `launchpad/scripts` is where cohort logic actually lives — and
 `test_pr_body_check.py` alone carries 82 tests whose strength nobody has measured.
 
@@ -397,7 +402,7 @@ recommending gate / advisory / drop.
 
 - **Test-modification guard**, scoped to what the cohort owns first: `launchpad/**/test_*.py`,
   `launchpad/**/*.sh`, and the workflows. Widen later on evidence. The old plan named `crates/**`
-  Rust and `.spec.ts` only, which missed ~500 Desktop, 156 Flutter, 100 Tauri and 121 cohort test
+  Rust and `.spec.ts` only, which missed 610 Desktop, 156 Flutter, 262 Tauri and 121 cohort test
   files — including the tests for the very checker it modified
 - **Evidence block**: fix the empty-fence bypass in the existing check. Per Codex, a validator that
   accepts a fabricated pass count is a formatting validator, not evidence — so either validate a
@@ -413,38 +418,50 @@ empty-fence body fails.
 
 ---
 
-### Phase 5 — Make red able to block *(gated on decision (h) — needs admin)*
+### Phase 5 — Add the new checks to what already protects the branch *(needs admin)*
 
-Nothing today can block a merge: no ruleset, no branch protection, no required status checks.
+**Branch protection is already on.** `gh api repos/launchpad-26/buzz/branches/launchpad` reports
+`protected: true`; no *rulesets* apply (`/rules/branches/launchpad` → `[]`), so it is classic branch
+protection. **What it requires cannot be read at `maintain` permission** — the protection endpoint
+returns `404`, which is a permissions response, not an empty configuration.
 
-- Enable a ruleset on `launchpad` with **required status checks naming the checks built in Phases
-  2–4**, plus required PRs
-- Fix `.github/CODEOWNERS` — its sole owner is invalid on this fork, so every entry is inert — then
-  extend it to the verification config
-- Path guard for agent PRs touching verification config, fail-closed
+So this phase is not "turn protection on". It is:
+
+- **Find out what is required today.** Someone with admin reads the protection settings: which status
+  checks are required, whether reviews are required, whether code-owner review is on. This is a
+  five-minute question for whoever holds admin, and it determines everything else here
+- **Fix `.github/CODEOWNERS` first.** Its sole owner is `Unknown owner` on this fork, so every entry
+  is inert. If code-owner review is already required, it is being required of an owner that does not
+  resolve — worth checking early, because that failure mode is silent
+- **Add the checks built in Phases 2–4** to the required list
+- **Path guard** for agent PRs touching verification config, fail-closed
 
 **The circular dependency is gone.** The old step 7 depended on a quarantine file created in a
-charter-blocked phase. Quarantine is dropped from this programme; the ruleset protects the files that
-exist when it is enabled, and later additions extend the list.
+charter-blocked phase. Quarantine is dropped; protection covers the files that exist when it is
+configured, and later additions extend the list.
 
-> ⚠️ Enabling a ruleset on a busy branch mid-fleet can block in-flight agent PRs. Schedule it,
-> announce it in the worklog, keep "disable ruleset" ready.
+> ⚠️ Changing required checks on a busy branch mid-fleet can block in-flight agent PRs. Schedule it,
+> announce it in the worklog, keep the rollback ready.
 
-**Exit:** `gh api repos/launchpad-26/buzz/codeowners/errors` returns zero errors; a PR failing a
-required check cannot be merged.
+**Exit:** `gh api repos/launchpad-26/buzz/codeowners/errors` returns zero errors; the required-check
+list is known and written down; a PR failing one of the Phase 2–4 checks cannot be merged.
 
 ---
 
-### Phase 6 — Upstream track *(gated on decision (f); not a blocker for anything else)*
+### Phase 6 — Inherited surfaces *(gated on decision (f); not a blocker for anything else)*
 
-Findings on upstream product surfaces. The fork's own guide is explicit: *"Genuine product bugs in
-Buzz still belong at block/buzz/issues."*
+Findings on surfaces this fork inherited but does not author: `desktop/`, `crates/`, root `ci.yml`.
+
+**We work only in `launchpad-26/buzz`.** `block/buzz` is a **reference** — read it to compare, never
+file or contribute there. So there is no upstream contribution path: each finding is either fixed in
+this fork as conscious, documented divergence, or deliberately left alone and recorded as such.
+Decision (f) settles which.
 
 | Finding | Action |
 |---|---|
-| **INC-0001** — `playwright.config.ts` declares no JSON reporter, so `summarize-flaky-tests.mjs` has never had input and exits green | File at `block/buzz`. Small, well-evidenced, fixes a monitoring failure |
-| Desktop E2E flakes failing docs-only PRs | Propose path-filtering upstream — it would have prevented all four observed `ci.yml` failures |
-| nextest profiles, retries, JUnit for `crates/**` | Propose upstream or drop. **Not carried in this fork** |
+| **INC-0001** — `playwright.config.ts` declares no JSON reporter, so `summarize-flaky-tests.mjs` has never had input and exits green | **Best candidate to fix here.** Two lines, well-evidenced, repairs a monitoring failure that is silently green today |
+| Desktop E2E flakes failing docs-only PRs | Path-filter in this fork — it would have prevented all four observed `ci.yml` failures |
+| nextest profiles, retries, JUnit for `crates/**` | **Drop.** Inherited surface, no cohort value, and the fixed JUnit path collides across invocations |
 
 ---
 
@@ -495,8 +512,8 @@ Where each old step went:
 |---|---|
 | 1 — meta-check triage | **Phase 1**, widened into a full audit of what is actually verified |
 | 2 — fix dominant failure class | **Phase 2** |
-| 3, 4 — nextest profiles, `ci.yml` wiring | **Dropped** — upstream surface, and the fixed JUnit path collides across many nextest invocations |
-| 5 — Playwright flaky surfacing | **Phase 6, upstream** — the machinery already exists and is fail-open (INC-0001); the fix belongs at `block/buzz` |
+| 3, 4 — nextest profiles, `ci.yml` wiring | **Dropped** — inherited surface, and the fixed JUnit path collides across many nextest invocations |
+| 5 — Playwright flaky surfacing | **Phase 6** — the machinery already exists and is fail-open (INC-0001); fixing it here needs decision (f) |
 | 6 — quarantine file | **Dropped** — source of the circular dependency, and no evidence yet that quarantine is needed |
 | 7 — ruleset + CODEOWNERS | **Phase 5**, decoupled from quarantine so nothing depends on a later phase |
 | 8 — test-modification guard | **Phase 4**, re-scoped to cohort surfaces after the old scope was shown to miss most of the repo's tests |
@@ -506,7 +523,7 @@ Where each old step went:
 | 13 — verification ladder docs | **Phase 2 and 4**, with the fictional inner-loop tooling removed |
 
 **New in the rework, absent from the old plan:** Phase 1's audit, shellcheck for 30 unlinted shell
-scripts, actionlint for 10 unlinted workflows, and a separate upstream track.
+scripts, actionlint for 10 unlinted workflows, and a separate inherited-surface track.
 
 **No step-level plan currently exists for the reworked phases.** That is deliberate — each Feature
 gets its own plan when its issue is created, rather than one monolithic document that drifts.
