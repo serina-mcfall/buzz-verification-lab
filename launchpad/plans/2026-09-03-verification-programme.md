@@ -40,17 +40,23 @@ cannot catch something, this document names it.
 
 ```
 ROLE            You are executing one phase of a multi-phase programme.
-READ FIRST      launchpad/plans/2026-09-03-verification-hardening.md   ← the step-level plan
-                ~/research/test-automation-for-agentic-coding.md       ← why each mechanism exists
-BUILD WITH      serina:build-change  (one step at a time, each step's own done-when)
+READ FIRST      the Phases section below                              ← reworked 2026-09-03
+                ~/research/test-automation-for-agentic-coding.md      ← why each mechanism exists
+                records/                                              ← what has already gone wrong
+SUPERSEDED      launchpad/plans/2026-09-03-verification-hardening.md is HISTORY.
+                Its 13 steps predate the Codex review. Do not build from it.
+BUILD WITH      serina:build-change, from a Feature-level plan written per phase
 GATES           review-plan before building · review-code + review-tests per step
                 review-final before merge · qa explore mode applies
 BLOCKED-ON      Phase 0 decisions are HUMAN decisions. Do not resolve them yourself.
-                They are OPEN (e), (f), (g) in the hardening plan.
+                (h) admin access · (g) CODEOWNERS owners · (f) upstream posture.
+FIRST RULE      Before prescribing any mechanism, SEARCH FOR IT. Three times in one
+                session a plan proposed building something that already existed.
+                Record where it exists, or that a named search found nothing.
 NEVER           add retries, sleeps or timeout bumps to make a failing test pass
-                weaken or delete a test without a `test-change:` declaration in the PR body
-                edit .config/nextest.toml, quarantine.toml, lefthook.yml or workflows
-                  without flagging it for human review
+                weaken or delete a test without a `test-change:` declaration
+                edit lefthook.yml, CODEOWNERS or workflows without human review
+                set git core.hooksPath globally — it disables this repo's lefthook
 ALWAYS          show command output as evidence, never assert success
                 fix trivia in place; report only behaviour/security/verification defects
 ```
@@ -72,8 +78,8 @@ flowchart LR
     end
 
     subgraph APP["Track B — Buzz application"]
-        P["Hardening plan<br/>13 steps, review-gated"]
-        B["Gates that can block<br/>+ flake defence<br/>+ agent guardrails"]
+        P["Phases 1-5<br/>know · repair · cover<br/>guard · enforce"]
+        B["Cohort surfaces verified<br/>+ agent guardrails<br/>+ gates that can block"]
         P --> B
     end
 
@@ -103,16 +109,16 @@ flowchart TD
     E["Agent edits code"] --> I
 
     subgraph I["Inner loop — runs 100s per day"]
-        I1["format + lint<br/>AUTO-FIXED, never fails"]
-        I2["affected unit tests only<br/>--lf · --findRelatedTests"]
+        I1["format + lint<br/>AUTO-FIXED by lefthook, never fails"]
+        I2["path-scoped test lanes<br/>lefthook pre-push, merge-base diff"]
         I3["typecheck"]
     end
 
     I --> M
 
-    subgraph M["Merge gate — runs ~10s per day · MUST be able to block"]
-        M1["full unit + integration<br/>nextest, scoped retries"]
-        M2["Desktop E2E<br/>flaky status surfaced"]
+    subgraph M["Merge gate — runs ~10s per day · CANNOT block until Phase 5"]
+        M1["existing CI test jobs"]
+        M2["shellcheck + actionlint<br/>cohort surfaces"]
         M3["PR body + evidence check"]
         M4["test-modification guard"]
     end
@@ -120,8 +126,7 @@ flowchart TD
     M --> A
 
     subgraph A["Advisory — non-blocking, time-boxed"]
-        A1["diff-scoped mutation<br/>survivors reported"]
-        A2["quarantined tests<br/>still run, never block"]
+        A1["diff-scoped mutation on Python<br/>survivors reported"]
     end
 
     M --> POST["Post-merge<br/>canaries · observability"]
@@ -171,7 +176,7 @@ flowchart TD
     subgraph IND["Individual layer — zero permissions, works in ANY repo"]
         H1["PreToolUse hooks<br/>agent cannot bypass — outside its control"]
         H2["Stop hooks<br/>turn blocked until a check passes"]
-        H3["Personal git hooks<br/>git config --global core.hooksPath"]
+        H3["Repo git hooks<br/>lefthook, already installed"]
         H4["Local verify target<br/>same checks CI runs"]
     end
 
@@ -206,7 +211,7 @@ is not about agents at all.
 |---|---|---|---|
 | 1 | **Claude Code PreToolUse hooks** | nothing the agent controls | ✅ |
 | 2 | **Stop hooks** — block the turn until a check passes | nothing the agent controls | ✅ |
-| 3 | **Personal git hooks** via `core.hooksPath` | `--no-verify` (a deliberate act) | ✅ |
+| 3 | **Repo git hooks** — lefthook pre-commit/pre-push | `--no-verify` (a deliberate act) | ⚠️ per-repo |
 | 4 | **Local verify target** (`just verify`, Makefile) | not running it — so pair with 1 | ✅ |
 | 5 | **Repo hooks** (`lefthook.yml`) | `--no-verify`; needs repo buy-in | ⚠️ per-repo |
 | 6 | **Protection on your own fork** — you *are* admin of your fork | — | ⚠️ fork workflow only |
@@ -227,8 +232,11 @@ Both files also carry their own dated defect notes — `verify-gate.sh`'s trigge
 `git\s+commit\b`, which `git -C /path commit` walked straight past; a guard narrower than the thing it
 guards. **That is the pattern to copy: the guard, and the written record of how it failed.**
 
-**Unused headroom:** `git config --global core.hooksPath` is currently unset, so layer 3 is available
-and not yet in use.
+**Do NOT reach for `git config --global core.hooksPath`.** It looked like unused headroom, and it is
+a trap: git honours **one** hooks directory, so setting it globally redirects away from `.git/hooks`
+where lefthook installs — silently disabling this repo's DCO, formatting and pre-push checks. Caught
+by the Codex review before anyone tried it. A personal-hooks layer would need an explicit chaining
+dispatcher, which nothing here has.
 
 ## Defence in depth — and the honest gaps
 
@@ -274,402 +282,234 @@ flowchart TD
 
 ## Phases
 
-Each phase is independently deployable and independently valuable. Phases 1–3 need no cohort
-decision. Phase 4 does.
+**Reworked 2026-09-03 against the Codex review.** The previous seven-phase structure had a circular
+dependency, aimed its expensive mechanisms at upstream product code the cohort does not author, and
+prescribed several mechanisms that already existed. This version is smaller, ordered so nothing
+depends on anything later, and aimed at surfaces the cohort owns.
+
+**The governing change:** *know, then repair, then extend, then enforce.* The old plan started by
+building mechanisms. Codex's recommendation was to establish stable statuses and repair the existing
+fail-open paths first — that is now Phases 1 and 2, and they gate everything expensive.
 
 ```mermaid
 flowchart LR
-    P0["Phase 0<br/>DECIDE<br/>human only"]
-    P1["Phase 1<br/>Skill suite<br/>portable"]
-    P2["Phase 2<br/>Make red mean something<br/>in-charter"]
-    P3["Phase 3<br/>Agent guardrails<br/>in-charter"]
-    P4["Phase 4<br/>Flake defence<br/>NEEDS CHARTER"]
-    P5["Phase 5<br/>Test-quality signal<br/>advisory"]
-    P6["Phase 6<br/>Harvest<br/>continuous"]
+    P0["Phase 0<br/>DECISIONS<br/>ADR issues"]
+    P1["Phase 1<br/>KNOW<br/>audit only"]
+    P2["Phase 2<br/>REPAIR<br/>fix what lies"]
+    P3["Phase 3<br/>COVER<br/>cohort surfaces"]
+    P4["Phase 4<br/>GUARD<br/>agent change"]
+    P5["Phase 5<br/>ENFORCE<br/>needs admin"]
+    P6["Upstream track<br/>file at block/buzz"]
+    P7["Portable suite<br/>separate repo"]
 
-    P0 -->|"owners decision"| P2
-    P0 -->|"charter decision"| P4
-    P2 --> P3
+    P1 --> P2
+    P1 --> P3
+    P2 --> P4
     P3 --> P5
-    P1 -.->|"informs"| P2
-    P1 -.->|"informs"| P3
-    P2 --> P6
-    P3 --> P6
-    P4 --> P6
-    P5 --> P6
-    P6 -.->|"corrections"| P1
+    P4 --> P5
+    P0 -->|"decision h"| P5
+    P0 -->|"decision f"| P6
+    P1 -.->|"findings"| P6
 
     style P0 fill:#f6efe0,stroke:#8a6d3a
     style P1 fill:#e8f4ea,stroke:#3d7a4e
-    style P4 fill:#f6e6e6,stroke:#8a3a3a
-    style P6 fill:#e8eef6,stroke:#3a5f8a
+    style P5 fill:#f6e6e6,stroke:#8a3a3a
+    style P7 fill:#e8eef6,stroke:#3a5f8a
 ```
 
-Note Phase 1 runs **beside** everything — it is never a blocker, and Phase 6 feeds back into it.
+Dependencies run one way only. Phases 1–4 need no cohort decision and no admin. Phase 5 is the only
+one gated on access; Phase 6 is the only one gated on the charter.
 
 ---
 
-### Phase 0 — Decide (human, no code)
+### Phase 0 — Decisions, as ADR issues
 
-Three decisions no agent may make. Everything else waits on two of them.
+**Four** decisions, not three — the earlier count was wrong. Each becomes an ADR issue parented to the
+PRD, per `launchpad/AGENTS.md`: *"ADR is first on purpose: decisions masquerade as work."*
 
-> **A decision with no owner is a fail-open default** — whoever reaches it first interprets it, which
-> is the exact defect class this programme exists to remove. Ben raised this on 2026-09-03 and he is
-> right: an unowned Phase 0 is the weakest link in the whole document. **Fill the two columns below
-> before starting Phase 2.** They are deliberately left blank rather than guessed at.
+| # | Decision | Owner | Blocks |
+|---|---|---|---|
+| **(h)** | Does anyone in the cohort hold admin on the fork, and will they enable a ruleset? | **Jeff — `tucktuck101`** | Phase 5 |
+| **(g)** | Who are the valid CODEOWNERS? The current owner is `Unknown owner` on this fork | **Group** | Phase 5; moot if (h) is no |
+| **(f)** | Upstream posture: are upstream-surface findings filed at `block/buzz`, carried as fork divergence, or dropped? | **Group** | Phase 6 |
+| **(e)** | *Folded into (f)* — the docs-only Desktop E2E path filter edits upstream `ci.yml`, so it inherits the same decision | — | — |
 
-**Access facts, verified 2026-09-03 via the GitHub API — these constrain what is even possible:**
-
-| Fact | Value | Source |
-|---|---|---|
-| Repo | `launchpad-26/buzz`, a public **fork of `block/buzz`** | `gh api repos/launchpad-26/buzz` |
-| Owner | organisation `launchpad-26` — **not an individual** | same |
-| Serina's repo permission | `maintain: true`, **`admin: false`** | same |
-| Serina's org role | `member` | `gh api orgs/launchpad-26/memberships/…` |
-| Who may manage rulesets / branch protection | **Admin only.** GitHub's role table marks Maintain ✗ for "Manage branch protection rules and repository rulesets" | [GitHub docs — repository roles](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/repository-roles-for-an-organization) |
-
-**Consequence: step 7(a) cannot be performed by Serina.** Enabling a ruleset needs someone with admin
-on `launchpad-26/buzz`. This is a fact about access, not a disagreement about design.
-
-| # | Decision | Owner | Decide by | Why it cannot be delegated | Blocks |
-|---|---|---|---|---|---|
-| **(h)** *new* | Does anyone in the cohort have admin on the fork, and will they enable a ruleset? | **Jeff — `tucktuck101`** | ⬜ | Requires admin; nobody else can answer whether we hold it | Phase 2 step 7 · gates everything below |
-| **(f)** | Fork charter: may we modify upstream files? | **Group discussion** | ⬜ | Not a technical call — a relationship-with-upstream call on a repo the cohort does not own. Buzz's guide says *"We operate Buzz; we do not develop it."* Phase 4 touches `ci.yml`, `.config/nextest.toml`, `desktop/playwright.config.ts` | Phase 4 |
-| **(g)** | Who are the valid CODEOWNERS on the fork? | **Group discussion** | ⬜ | The current team owner is invalid here; picking humans is governance. **Moot unless (h) is yes** — CODEOWNERS without admin-set enforcement is decorative | Phase 2 step 7 |
-| **(e)** | Should docs-only diffs run Desktop E2E? | **Group discussion** | ⬜ | Would have prevented **all four** observed CI breaks — but it edits an upstream file, so it inherits (f) | Phase 4 scope |
-
-**Escalation rule.** If (f) has no answer by the time Phase 2 completes, do **not** let a builder infer
-it. Default to the narrowest option — stay inside `launchpad/` — record that as the decision with its
-date, and reopen it later. A recorded narrow decision beats an unrecorded broad one.
-
-### Contingency — if (h) is "no admin"
-
-The programme does **not** die; its enforcement layer moves to what the cohort actually controls.
-Ranked by strength:
-
-| Layer | Controlled by | Still available without admin? |
-|---|---|---|
-| **`lefthook` pre-push** — blocks locally *before* a PR exists | the repo, already installed by `just setup` | ✅ **yes — this becomes the primary gate** |
-| **Harness-level PR hook** — Serina's existing `pr-gate.sh` already refuses certain `gh pr create/merge` shapes | her own `~/.claude` config | ✅ yes, for her agents |
-| **`AGENTS.md` / `CLAUDE.md` convention** — agents instructed never to merge on red | the repo | ✅ yes, but advisory |
-| **CI status visible on the PR** — red is legible, just not blocking | GitHub, default | ✅ yes |
-| **Required status checks / code-owner review** | admin only | ❌ **no** |
-
-**What changes if enforcement is convention-only:** "red must block" becomes "red must be
-*impossible to miss*". That raises the value of Phase 2 steps 1–2 — a body check that fails 9 times
-in 25 is noise nobody reads, and noise is fatal when legibility is the only enforcement you have.
-It also makes the **advisory-then-evidence** strategy the whole strategy rather than a stepping stone.
-
-**Honest limit:** without admin, nothing stops a human or an agent from merging a red PR. That risk
-cannot be engineered away at the repo layer — it has to be named and accepted, or escalated to
-whoever holds admin.
-
-**But note how narrow that limit is.** See *Enforcement layers* above: of the four ways this can go
-wrong, **only** "someone merges a red PR" needs admin. Every agent-side threat — deleted tests,
-retry-spam, unearned success claims — is fully addressable at the individual layer, in this repo,
-today, with no permission from anyone. A "no" from (h) costs the programme one row of the table,
-not the programme.
-
-**Options for (f)**, since it is the consequential one:
-
-- **Contribute upstream** — cleanest long-term, slowest, needs `block/buzz` review
-- **Documented divergence** — fast, creates sync conflicts, needs an ADR
-- **Stay in `launchpad/` only** — zero conflict, weaker flake defence (the Desktop E2E flakes stay)
-
-**Exit criteria:** all three recorded in `launchpad/decisions/` as an ADR.
+**Escalation rule.** If (f) is unanswered when Phase 4 completes, default to the narrowest reading —
+file upstream, change nothing in the fork — record it with its date, and reopen later.
 
 ---
 
-### Phase 1 — Skill suite skeleton (portable, parallel)
+### Phase 1 — Know what is actually verified *(audit only, builds nothing)*
 
-Builds capability that works in **any** repo. Independent of Buzz entirely.
+The phase that should have come first. Every prior review pass caught a claim asserted rather than
+checked; this phase exists to replace assumption with evidence before any mechanism is designed.
 
-| Ships | Extends or new | Scope |
-|---|---|---|
-| `flake-triage` | new | Classify a red run: flake vs real vs infra; quarantine with an issue, never a retry |
-| `mutation-gate` | new | Diff-scoped mutation as a *test-quality* check; read survivors, decide gate vs advisory |
-| `verification-ladder` | new | Design which check runs in which loop for a given repo; the Phase-0-style audit |
-| `severity-floor` | new, small | What an agent fixes in place vs what it reports |
-| `review-tests` | **extend** | Add the coverage-theatre patterns the research names: weak oracles, tautologies |
-| `qa` | **extend** | Add flake-hunting to explore mode |
-
-**Entry:** none. **Exit:** each skill has a `SKILL.md`, a trigger description, and a "Where this came
-from" section (empty until Phase 6 fills it with real incidents) — **plus** the portability criterion
-below.
-
-**Deliberately not built:** an LLM-eval skill (that is for testing AI *products*, not for agents
-testing code), a contract-testing skill, a custom-report-format skill. See *Bloat*, below.
-
-#### Distribution — DECIDED 2026-09-03 (Serina)
-
-**Three decisions, all settled:**
-
-**(1) A separate plugin, not folded into `serina`.** Verification is a separable concern. A team with
-its own planning conventions should be able to adopt verification without inheriting
-`plan-change`/`review-*`, and vice versa.
-
-**(2) Build your own — the published one is a reference, not the distribution.** The advice to anyone
-adopting this is: *create your own marketplace at the individual level.* Not a fork you forget to
-update — your own, that you own.
-
-**(3) The reference lives in a NEW topic-named repo, Serina-owned — not in `serina-skills`.**
-Working name `agentic-verification`; ⬜ name still provisional. Rationale:
-
-| | |
+| Task | Question it answers |
 |---|---|
-| **Identity** | `serina-skills` describes itself as *"Serina McFall's working skills"* — correct for that repo, wrong for something built to be adopted. A topic name says *project*, not *personal kit* |
-| **Trust** | This plugin ships hooks that block tool calls. A dedicated, auditable repo is a fairer thing to ask someone to install than an entry inside a personal collection |
-| **Versioning** | Releases on its own cadence, unentangled from the `serina` plugin's |
-| **Focus** | Adopters install one thing that does one thing |
-| **Ownership preserved** | Still Serina's. Donating to an org later stays possible; that door only opens one way |
+| **CI coverage audit of cohort tests** | 121 Python test files exist under `launchpad/`. Which are actually executed by a workflow? Spot checks show `launchpad/scripts` **is** covered (`launchpad-pr-check.yml:144`, `launchpad-adr-check.yml:63`), while several skill test directories have no workflow watching their path. Confirm per directory — do not assume |
+| **Fail-open inventory** | Which existing checks pass when their input is missing? Two are already known: `pr_body_check.py` degrades to text search when the GitHub API is unavailable; the Playwright flaky summarizer skips silently. Find the rest |
+| **Meta-check failure triage** | Why does the PR body check fail 9 runs in 25? Classify each: checker bug / agent non-conformance / template gap / nagging-by-design. Keep the failing bodies as a replay corpus |
 
-**Consequence for Phase 1:** creating and publishing the repo is now a task in this phase, not an
-afterthought — repo, `.claude-plugin/marketplace.json`, plugin scaffold, then the skills and hooks.
+**Exit:** a findings list, one record event per finding, and a replay corpus. **No mechanism built.**
 
-> **A marketplace is 1:1 with a repo.** `known_marketplaces.json` maps each marketplace name straight
-> to a GitHub repo, so "your own marketplace" means "your own repo" — not another entry in someone
-> else's `marketplace.json`.
+---
 
-**Why individual ownership is the recommended path, not just a permitted one:**
+### Phase 2 — Repair what lies *(in-charter, cohort-owned)*
 
-| Reason | Detail |
+Codex's own recommendation: repair the existing fail-open paths before adding new ones. A check that
+passes when it did not check is worse than no check, because it is counted as coverage.
+
+- Fix the dominant meta-check failure class from Phase 1
+- Make each failure message name the violated rule and show a conforming example — agents iterating
+  against vague failures is where retry-spam begins
+- Decide `pr_body_check.py`'s degradation deliberately: either fail closed when the API is
+  unavailable, or state in the output that it is advisory. It must not do both
+- If Phase 1 shows the issue body check is nagging-by-design, stop treating it as a gate. It runs on
+  issue events and can never be a required PR check regardless
+
+**Exit:** body-check failure rate under 10% over a week; no check in the inventory passes on absent
+input without saying so.
+
+---
+
+### Phase 3 — Cover the cohort's own surfaces *(in-charter — the Blocker-3 remedy)*
+
+The cohort authors Python, shell, workflows and documentation. That is where verification belongs.
+
+| Surface | Today | Add |
+|---|---|---|
+| 30 shell scripts under `launchpad/` | **no linting at all** — verified, `shellcheck` appears nowhere | shellcheck in CI and pre-commit |
+| 10 `launchpad-*` workflows | **no linting at all** — `actionlint` appears nowhere | actionlint in CI |
+| 121 Python test files | CI exists but is path-filtered per area | close the gaps Phase 1 found |
+| `launchpad/scripts` logic | tests run; quality unmeasured | **mutation testing with `mutmut`, diff-scoped, advisory first** |
+
+**Mutation belongs here, not on `crates/**`.** The old plan ran mutation against upstream Rust the
+cohort does not write. Python under `launchpad/scripts` is where cohort logic actually lives — and
+`test_pr_body_check.py` alone carries 82 tests whose strength nobody has measured.
+
+**Exit:** shellcheck and actionlint green in CI; every cohort test directory is executed by some
+workflow, or its absence is recorded as deliberate; a mutation baseline exists with an ADR
+recommending gate / advisory / drop.
+
+---
+
+### Phase 4 — Guardrails on agent-authored change *(in-charter)*
+
+- **Test-modification guard**, scoped to what the cohort owns first: `launchpad/**/test_*.py`,
+  `launchpad/**/*.sh`, and the workflows. Widen later on evidence. The old plan named `crates/**`
+  Rust and `.spec.ts` only, which missed ~500 Desktop, 156 Flutter, 100 Tauri and 121 cohort test
+  files — including the tests for the very checker it modified
+- **Evidence block**: fix the empty-fence bypass in the existing check. Per Codex, a validator that
+  accepts a fabricated pass count is a formatting validator, not evidence — so either validate a
+  **CI run reference** or state plainly that it is advisory. Do not claim more than it does
+- **Severity floor policy** — trivia is fixed in place, never reported. Policy only; the lefthook
+  auto-fix lanes already exist
+
+**Stated blind spot:** the guard cannot detect assertion *weakening* with unchanged count. Phase 3's
+mutation layer is what covers that, and it is advisory — so this is a real gap, not a covered one.
+
+**Exit:** fixture diffs prove each guard fails without a declaration and passes with one; an
+empty-fence body fails.
+
+---
+
+### Phase 5 — Make red able to block *(gated on decision (h) — needs admin)*
+
+Nothing today can block a merge: no ruleset, no branch protection, no required status checks.
+
+- Enable a ruleset on `launchpad` with **required status checks naming the checks built in Phases
+  2–4**, plus required PRs
+- Fix `.github/CODEOWNERS` — its sole owner is invalid on this fork, so every entry is inert — then
+  extend it to the verification config
+- Path guard for agent PRs touching verification config, fail-closed
+
+**The circular dependency is gone.** The old step 7 depended on a quarantine file created in a
+charter-blocked phase. Quarantine is dropped from this programme; the ruleset protects the files that
+exist when it is enabled, and later additions extend the list.
+
+> ⚠️ Enabling a ruleset on a busy branch mid-fleet can block in-flight agent PRs. Schedule it,
+> announce it in the worklog, keep "disable ruleset" ready.
+
+**Exit:** `gh api repos/launchpad-26/buzz/codeowners/errors` returns zero errors; a PR failing a
+required check cannot be merged.
+
+---
+
+### Phase 6 — Upstream track *(gated on decision (f); not a blocker for anything else)*
+
+Findings on upstream product surfaces. The fork's own guide is explicit: *"Genuine product bugs in
+Buzz still belong at block/buzz/issues."*
+
+| Finding | Action |
 |---|---|
-| **Hooks run shell on your machine** | This plugin ships PreToolUse and Stop hooks that block tool calls. That is a far bigger trust ask than markdown. You should own the code that can block your own commits |
-| **Update control** | Nothing changes in your agents' behaviour because someone else pushed a commit |
-| **Customisation is expected** | Your severity floor, your quarantine policy, your stack. Config covers most of it; ownership covers the rest |
-| **No support dependency** | This reference is offered as-is. One person, no support promised — build on it, don't depend on it |
-| **Attribution stays clean** | Credit the source, own the copy |
-
-#### How to build your own — verified structure
-
-Copied from the working layout of `serina-mcfall/serina-skills`, not invented:
-
-```
-your-repo/
-├── .claude-plugin/
-│   └── marketplace.json          ← makes the repo a marketplace
-└── plugins/
-    └── <plugin-name>/
-        ├── .claude-plugin/
-        │   └── plugin.json       ← name, version, description, author
-        ├── skills/
-        │   └── <skill-name>/SKILL.md
-        ├── agents/               ← optional subagents
-        └── hooks/                ← the enforcement layer
-```
-
-`marketplace.json` declares plugins as an array, so one repo can host several:
-
-```jsonc
-{
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "<your-marketplace>",
-  "description": "…",
-  "owner": { "name": "…", "email": "…" },
-  "plugins": [
-    {
-      "name": "<plugin-name>",
-      "description": "…",
-      "source": "./plugins/<plugin-name>",
-      "category": "development"
-    }
-  ]
-}
-```
-
-Install it with `/plugin marketplace add <you>/<your-repo>`.
-
-**Vet before you adopt.** Anything shipping hooks deserves an audit — read what each hook blocks and
-when. The `vet-skill` skill in the reference marketplace exists for exactly this, and applies to its
-own author's work as much as anyone's.
-
-#### The plugin ships HOOKS, not only skills — DECIDED 2026-09-03
-
-Per *Enforcement layers* above: the individual layer is primary, so the plugin's enforcement must
-install with it. Skills alone are advice; hooks are enforcement.
-
-| Ships | Kind | Why it must be a hook rather than a skill |
-|---|---|---|
-| test-file write guard | PreToolUse | An agent asked not to edit tests can still edit tests. A hook cannot be reasoned with |
-| `--no-verify` / force-push guard | PreToolUse | Bypass attempts are exactly what needs blocking |
-| evidence-before-done gate | Stop | The agent must not end its turn claiming success without a passing run |
-| flake-triage · quarantine · mutation-reading | Skills | These need judgment, so they belong in skills |
-
-**Precedent to build on, not duplicate:** `verify-gate.sh`, `git-safety.sh` and `pr-gate.sh` already
-exist globally. The plugin's hooks must **detect and defer** to an existing installation rather than
-double-gate — two hooks blocking the same command produce confusing failures.
-
-**This makes the suite portable by construction.** Install the plugin, clone any repo — a client's,
-someone else's open source, a fork you have no rights on — and enforcement is live on day one with no
-permissions requested from anyone.
-
-#### The `init` skill's real job
-
-Not "write a config file" but **detect the strongest enforcement available here and configure it,
-degrading gracefully**:
-
-```
-admin on the repo?        → offer required checks + CODEOWNERS   (best)
-repo hooks welcome?       → lefthook/husky entries               (good)
-neither?                  → personal hooks + core.hooksPath      (still works)
-always                    → PreToolUse/Stop hooks from the plugin
-```
-
-A verification system that refuses to run without admin is a verification system nobody can take to
-their next project.
-
-#### Adaptability — reach for these in order
-
-| Tier | Mechanism | Covers |
-|---|---|---|
-| 1 | **Detect, don't ask** — read the repo and adapt: `Cargo.toml` → nextest, `package.json` → vitest/jest, `.github/workflows/` → Actions | the large majority |
-| 2 | **Repo-local config** — a small optional `.verification.toml` for what cannot be detected: which branch is protected, what counts as trivia, where the quarantine list lives | the rest |
-| 3 | **An `init` skill** — interviews once, writes the config, adds a `CLAUDE.md` section | turns *installable* into *adoptable* |
-
-The precedent is already in-house: `plan-change` says *"use the base directory announced for this
-skill, not a hard-coded path."* Same discipline, applied to stacks instead of paths.
-
-#### Portability criterion — a hard exit gate for this phase
-
-**No skill in the plugin may reference Buzz, `launchpad`, `pr_body_check.py`, cohort process, or any
-repo-specific path.** The skill keeps the *reasoning* — "quarantine is human-owned and every entry
-carries an issue number" — and detects the *mechanism*. Everything Buzz-shaped stays in the hardening
-plan, which is Track B.
-
-Check it mechanically before publishing — **fail-closed**, so a missing or misnamed directory is a
-failure rather than a silent pass:
-
-```bash
-#!/usr/bin/env bash
-# run from the root of the topic repo (working name: agentic-verification)
-dir="${1:?usage: check-portability.sh <plugin-dir>}"
-test -d "$dir" || { echo "FAIL: $dir does not exist — nothing was checked"; exit 1; }
-if grep -rniE 'buzz|launchpad|pr_body_check|cohort|nextest 0\.9\.136' "$dir"; then
-  echo "FAIL: repo-specific references found above"; exit 1
-fi
-echo "PASS: no repo-specific references in $dir"
-```
-
-> **Why the guard exists.** The first version of this check was a bare `grep` with the comment "must
-> return nothing." Serina ran it on 2026-09-03 before the directory existed: it printed nothing and
-> exited quietly — identical to a clean pass. A check whose input is missing must report that, never
-> succeed. This is the same fail-open defect the programme's own gates are designed to prevent, found
-> in the programme's own verification command.
-
-#### Open sub-decisions for this phase
-
-- ⬜ **Canonical copy direction.** Home `~/.claude/skills/` → plugin → any adopter's own copy is three
-  copies of one instruction. `research`'s own note warns: *"Two copies of one instruction drift apart
-  quietly."* Decide the canonical direction **before** the third copy exists, not after. This matters
-  more now that adopters are advised to build their own — a reference that drifts from its author's
-  working copy teaches the wrong thing.
-- ✅ **Which repo hosts the reference** — DECIDED 2026-09-03: a new topic-named repo, Serina-owned.
-  See decision (3) above.
-- ⬜ **The name itself** — `agentic-verification` is a working title. Last provisional item; changing
-  it later costs a repo rename and a re-`add` for anyone who installed early, so worth settling
-  before publishing rather than after.
+| **INC-0001** — `playwright.config.ts` declares no JSON reporter, so `summarize-flaky-tests.mjs` has never had input and exits green | File at `block/buzz`. Small, well-evidenced, fixes a monitoring failure |
+| Desktop E2E flakes failing docs-only PRs | Propose path-filtering upstream — it would have prevented all four observed `ci.yml` failures |
+| nextest profiles, retries, JUnit for `crates/**` | Propose upstream or drop. **Not carried in this fork** |
 
 ---
 
-### Phase 2 — Make red mean something (in-charter, highest value)
+### Phase 7 — Portable suite *(Track A — separate repo, runs in parallel)*
 
-This is where the pain actually is. All surfaces are `launchpad/` or `.github/workflows/launchpad-*`
-— in-charter for the fork, no upstream divergence.
+Unchanged and largely untouched by the Codex review: the topic-named repo, the plugin shipping hooks
+and skills, the `init` skill, the portability gate. It is not a Feature of this PRD — it lives in a
+different repository.
 
-| Plan step | Ships | Verified problem it fixes |
-|---|---|---|
-| 1 | Failure triage + replay corpus | 9/25 and 5/7 failure rates, cause unknown |
-| 2 | Fix the dominant failure class; every failure names its rule | Agents iterate blind against vague failures |
-| 7 | **Branch ruleset + required status checks + valid CODEOWNERS** | Nothing can block a merge today |
-| 12 | Severity-floor policy | Trivia reported instead of fixed |
-| 13 | Verification-ladder docs in `TESTING.md` + `launchpad/AGENTS.md` | No written policy for agents to follow |
-
-**Entry:** Phase 0 decision (g). **Exit:**
-`gh api repos/launchpad-26/buzz/codeowners/errors` returns zero errors; a PR failing a required check
-cannot be merged; body-check failure rate under 10% on a week of runs.
-
-> ⚠ **Rollout risk.** Enabling a ruleset on a busy branch mid-fleet can block in-flight agent PRs.
-> Schedule it, announce it in the worklog, keep "disable ruleset" ready as rollback.
+One correction carried over: the enforcement claim must be stated honestly. Harness hooks are
+**accident prevention within one harness**, not a security boundary. They do not govern other agents,
+IDEs, browser edits or humans.
 
 ---
 
-### Phase 3 — Agent guardrails (in-charter)
+### Continuous — the finding record
 
-| Plan step | Ships | Notes |
-|---|---|---|
-| 8 | Test-modification guard | Covers `#[test]`, `#[tokio::test]`, `#[rstest]`, `proptest!`, deleted test files, `.spec.ts`. States its own blind spot |
-| 9 | **Tighten** the existing evidence check | Today any fence anywhere passes — including an empty one. Do not add a parallel section; the template forbids new headings |
-
-**Entry:** Phase 2 step 2 (same files). **Exit:** fixture diffs prove each guard fails without a
-declaration and passes with one; an empty-fence PR body fails.
+Not a phase. Every phase writes findings to `records/`, and the pattern across them is what justifies
+changing a skill later.
 
 ---
 
-### Phase 4 — Flake defence (blocked on charter decision)
+### Dropped, with reasons
 
-Aimed where the flakes verifiably are: **Desktop Playwright E2E**, not Rust.
+Naming what was removed matters as much as what remains — a silently dropped mechanism reads as an
+oversight later.
 
-| Plan step | Ships | Already exists — do not rebuild |
-|---|---|---|
-| 3 | `.config/nextest.toml` with retries **scoped away from every shared-Postgres lane** | — |
-| 4 | `ci.yml` wired to profiles; JUnit artifacts; flaky summary | — |
-| 5 | Playwright JUnit reporter + flaky surfacing + trace upload | `retries: CI ? 2 : 0` and `trace: on-first-retry` **already exist** |
-| 6 | One human-owned `quarantine.toml` generating exclusions for both runners | — |
-
-**Entry:** Phase 0 decision (f) — steps 3, 4 and 5 all edit upstream files.
-**Exit:** a forced-flaky test reports as *flaky* with a trace artifact, not as passed; quarantining a
-test removes it from the gating job and keeps it running in a non-gating one.
-
-> **Verify before building:** the pinned nextest 0.9.136's support for profiles, per-override retries
-> and flaky status was *not* confirmed at plan time. Read the docs first; bump the pin if needed.
-
----
-
-### Phase 5 — Test-quality signal (advisory first)
-
-| Plan step | Ships |
+| Dropped | Why |
 |---|---|
-| 10 | `cargo mutants --in-diff` on PRs touching `crates/**`, time-boxed, non-required |
-| 11 | Baseline across ~10 merged PRs → ADR recommending gate / advisory / label-triggered |
-
-**Entry:** Phase 3. **Exit:** the ADR carries a per-PR table of survivors, noise and wall-clock, plus
-a threshold recommendation. **Budget risk:** mutation on a large Rust workspace can blow any time-box;
-fallback is label-triggered rather than per-PR.
-
-> **Verify before building:** `--in-diff` input semantics (diff file vs content, path relativity in a
-> workspace) were not confirmed at plan time.
+| Personal git hooks via `core.hooksPath` | Git honours **one** hooks directory; setting it globally redirects away from `.git/hooks` where lefthook installs, silently disabling DCO, formatting and pre-push checks |
+| "Affected tests only" inner loop | The tools named do not exist here: `--lf` is last-failed not affected; Desktop uses Node's built-in runner so `--findRelatedTests` is unavailable; Flutter has no affected-test mechanism |
+| `retries = 2` with exclusions | That is default-on retries, not scoped retries. New stateful or timing-sensitive tests would silently inherit them. If retries return, default 0 with human-owned opt-in |
+| nextest JUnit at a fixed path | `ci.yml` invokes `cargo nextest run` many times; one configured path means later runs overwrite earlier reports and the artifact shows a fraction of the run as though it were the whole |
+| Human-approval status check | Runs on `pull_request`, not `pull_request_review`, so an approval would never re-trigger it. Needs a different design if it returns |
+| Quarantine file feeding both runners | Source of the circular dependency, and no evidence yet that quarantine is needed. Revisit when a flake actually needs quarantining |
 
 ---
 
-### Phase 6 — Harvest (continuous, this is the point)
+## What happened to the old 13-step plan
 
-Every phase produces incidents. Each one that surprises you becomes a dated correction in the skill
-that should have caught it. Use `sre-incident-record` to capture as you go; fold into skills at each
-phase boundary.
+`launchpad/plans/2026-09-03-verification-hardening.md` is **superseded history**, kept for the record
+rather than for execution. It was written before the Codex review, and its structure did not survive
+it: the step ordering was circular, and several steps aimed at surfaces the cohort does not author.
 
-**Already harvestable from this planning session** — three real incidents, no code written yet:
+Where each old step went:
 
-| Incident | Lesson | Belongs in |
-|---|---|---|
-| Plan named worktrees that did not exist (read from stale session-transcript names) | Verify "in flight" against `git worktree list`, never from directory names | `plan-change` |
-| Plan claimed CI was 0/12 green — sampling artifact across mixed workflows | Sample per workflow, not across | `plan-change` |
-| Revision 2 planned to build lefthook auto-fix that already fully existed | The planner cannot see this from inside the plan; only a reviewer reading the repo can | `plan-change`, `review-plan` |
+| Old step | Now |
+|---|---|
+| 1 — meta-check triage | **Phase 1**, widened into a full audit of what is actually verified |
+| 2 — fix dominant failure class | **Phase 2** |
+| 3, 4 — nextest profiles, `ci.yml` wiring | **Dropped** — upstream surface, and the fixed JUnit path collides across many nextest invocations |
+| 5 — Playwright flaky surfacing | **Phase 6, upstream** — the machinery already exists and is fail-open (INC-0001); the fix belongs at `block/buzz` |
+| 6 — quarantine file | **Dropped** — source of the circular dependency, and no evidence yet that quarantine is needed |
+| 7 — ruleset + CODEOWNERS | **Phase 5**, decoupled from quarantine so nothing depends on a later phase |
+| 8 — test-modification guard | **Phase 4**, re-scoped to cohort surfaces after the old scope was shown to miss most of the repo's tests |
+| 9 — evidence check | **Phase 4**, with the honest limit stated: validate a CI run reference or stay advisory |
+| 10, 11 — mutation on `crates/**` | **Phase 3**, re-aimed at Python under `launchpad/scripts` where cohort logic lives |
+| 12 — severity floor | **Phase 4** |
+| 13 — verification ladder docs | **Phase 2 and 4**, with the fictional inner-loop tooling removed |
 
----
+**New in the rework, absent from the old plan:** Phase 1's audit, shellcheck for 30 unlinted shell
+scripts, actionlint for 10 unlinted workflows, and a separate upstream track.
 
-## Step → phase map
-
-Nothing from the hardening plan is dropped. Every step lands in exactly one phase.
-
-| Phase | Steps | Charter status |
-|---|---|---|
-| 0 | OPEN (e), (f), (g) | human decision |
-| 1 | — (skills repo, not Buzz) | n/a |
-| 2 | 1, 2, 7, 12, 13 | in-charter |
-| 3 | 8, 9 | in-charter |
-| 4 | 3, 4, 5, 6 | **needs (f)** |
-| 5 | 10, 11 | in-charter |
-| 6 | continuous | n/a |
+**No step-level plan currently exists for the reworked phases.** That is deliberate — each Feature
+gets its own plan when its issue is created, rather than one monolithic document that drifts.
 
 ---
 

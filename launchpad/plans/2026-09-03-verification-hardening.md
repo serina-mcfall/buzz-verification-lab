@@ -9,8 +9,23 @@ feedback relayed 2026-09-03, which closed the two tool-verification unknowns in
 steps 3, 6 and 10. Full review log — including what each review changed and the
 still-open items — lives in the companion programme document's "Review record".
 
-STATUS: ON HOLD by Serina's decision, 2026-09-03 — no step starts until every
-requested review has returned. Do not begin building from this plan. Design goals, in the requester's words: test
+STATUS: SUPERSEDED 2026-09-03 by the reworked phases in the companion programme
+document. DO NOT BUILD FROM THIS PLAN. It is kept as history — the record of what
+was proposed before the Codex review, and of what that review changed.
+
+Why it was superseded, in one line each:
+  - Circular ordering: step 7 [needs 6], but 6 sat in a charter-blocked phase
+    while 7 sat in an unblocked one, so the phase plan could not execute.
+  - Wrong surface: mutation and flake defence aimed at upstream Rust and
+    Desktop code the cohort does not author, while cohort-owned Python, shell
+    and workflows got no verification at all.
+  - Three steps prescribed mechanisms that already existed (see INC-0005).
+  - Several mechanisms could not work as specified: the fixed nextest JUnit
+    path collides across many invocations; the human-approval check runs on the
+    wrong event; core.hooksPath would disable this repo's lefthook.
+
+See the programme document's "What happened to the old 13-step plan" for where
+each step went. Design goals, in the requester's words: test
 automation, CI and verification working seamlessly and efficiently; breaks stop;
 gates surface real bugs, not trivia — trivia gets fixed on the spot by the agent
 that finds it. "Foolproof" is explicitly NOT claimed: every layer here can miss;
