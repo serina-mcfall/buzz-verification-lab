@@ -699,6 +699,69 @@ fresh · custom test-result formats · unsupervised self-healing tests · new Se
 
 ---
 
+## Future direction — a container as the distribution and boundary layer
+
+**Not decided. Not scheduled.** Recorded 2026-09-03 so the option is not re-derived from
+scratch later. When it comes up, it wants its own ADR: *distribution — container image vs copied
+marketplace*.
+
+Three things get called "put it in a container", and they are worth different amounts:
+
+| Reading | Value here |
+|---|---|
+| CI runner image | **Low.** Hermit already pins this repo's toolchain; the reproducibility argument is spent |
+| Devcontainer for Buzz | **Low–moderate.** Onboarding convenience, orthogonal to verification |
+| **Verification / agent sandbox image** | **The interesting one** — everything below concerns this |
+
+### Why it is worth taking seriously
+
+**It is a real boundary where a hook is not.** The strongest criticism of the individual-layer
+argument (Codex Blocker 2, accepted) was that Claude hooks do not govern Codex, other harnesses,
+IDEs, browser edits or humans. A container does: it controls which binaries exist, can mount the
+repo read-only, and can drop network. Anything running inside is subject to it, whatever launched
+it.
+
+That fills the gap in the enforcement ladder, which currently jumps from *"personal hooks,
+bypassable"* straight to *"required checks, needs admin"*:
+
+| Rung | Governs | Needs admin? |
+|---|---|---|
+| Personal hooks | one harness | no |
+| **Container sandbox** | **anything running inside it** | **no** |
+| Required status checks | the merge | yes |
+
+**It also answers the supply-chain objection to the plugin** (Codex High #11: no signing, no
+pinning, no provenance, no way to tell which copied generation someone runs). Container registries
+have solved exactly that: immutable digests, cosign signatures, SBOMs, version tags, a patch
+channel. `registry/verify@sha256:…` is more auditable than copied shell scripts, and it turns
+"build your own so you own it" from a maintenance dodge into something with provenance.
+
+### What it does not solve — state these before adopting
+
+- **Organisational enforcement.** A container cannot block a merge. Required checks still need admin.
+- **Self-modification.** If the agent can edit the Dockerfile or rebuild the image, it is not a
+  boundary — the same hole as hooks. It holds **only if the image is built elsewhere and the agent
+  runs inside it**.
+- **Drift.** Moved, not removed. A stale image carries stale tools and open CVEs, and publishing one
+  creates a patching obligation.
+- **Toolchain pinning in this repo.** Hermit already does it.
+
+### The trap
+
+**Keep the container out of the inner loop.** The ladder's governing rule is that the cheapest
+checks run most often; a container round-trip on every edit-test cycle makes the fastest loop slow,
+and an agent will route around a slow loop. Host for the inner loop, container for the merge-gate
+equivalent and for reproducing CI locally.
+
+### Sequencing, if it happens
+
+Skills and hooks first — they define *what* is enforced. Container later — it defines *where* it
+runs and how it is distributed. Building the image first packages behaviour that has not been
+validated yet.
+
+This is a direction for the **portable suite** (Track A), not for the Buzz programme (Track B),
+where Hermit and CI already cover what it would add.
+
 ## The finding record — where defects live after the session ends
 
 **Established 2026-09-03.** Every review in this programme has produced findings that would
