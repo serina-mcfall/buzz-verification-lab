@@ -7,6 +7,13 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ["list"],
+    // scripts/summarize-flaky-tests.mjs reads this file and ci.yml uploads it,
+    // but nothing produced it — so the "Summarize flaky tests" step has taken
+    // its missing-file branch and exited 0 on every run since it was wired up
+    // (#1838, 2026-07-13). Path is relative to this config's directory, which
+    // matches both the summarizer's `working-directory: desktop` and the
+    // artifact path `desktop/playwright-report.json`.
+    ["json", { outputFile: "playwright-report.json" }],
     ["html", { open: "never", outputFolder: "playwright-report" }],
   ],
   use: {
