@@ -1,0 +1,76 @@
+name: launchpad — flaky report wiring
+
+# WHAT THIS GUARDS, AND WHY IT IS NOT PATH-FILTERED.
+#
+# INC-0001: three places referred to desktop/playwright-report.json and none
+# produced it. The summarizer took its missing-file branch and exited 0 on every
+# run from 2026-07-13 onward — CI reporting success for a step that had never
+# once done its job, while the only real ci.yml failures in the preceding 100
+# runs were the Desktop E2E flakes it existed to surface.
+#
+# The fix is one line in desktop/playwright.config.ts, and that file is upstream
+# and changes constantly — 144 commits touch it, though only one has ever
+# touched the reporter array. A merge that drops the reporter would restore the
+# original bug SILENTLY, because a summarizer with no input looks exactly like a
+# summarizer with nothing to report. This workflow is what notices.
+#
+# DELIBERATELY UNFILTERED BY PATH, for the reason launchpad-adr-check.yml gives:
+# a required check that does not run stays pending forever and blocks the merge
+# it was meant to guard. The checker is text comparison over two files and
+# finishes in milliseconds, so there is nothing worth filtering for. It also has
+# to run on merges that touch neither file by name — an upstream sync is exactly
+# the event that could drop the reporter.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: [launchpad]
+
+# Read-only. This check reports; it never writes to the repository or the PR.
+permissions:
+  contents: read
+
+jobs:
+  flaky-report-wiring:
+    name: flaky report wiring
+    runs-on: ubuntu-latest
+    steps:
+      # Same reasoning as launchpad-adr-check.yml: `on: pull_request` runs from
+      # the PR's own merge ref, forks included, so a fork PR owns every step
+      # here. Acceptable because the token is read-only with no secrets, and a
+      # defeated check misleads a reviewer without merging anything. Do not
+      # "harden" this to pull_request_target.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # FAIL CLOSED ON A MISSING CHECKER.
+      #
+      # A deleted checker, a renamed script or a partial checkout must not read
+      # as passing wiring — that is the exact fail-open this check exists to
+      # prevent, and it would be silent. The checker itself returns 3 for a
+      # missing subject; this step covers the checker going missing, which it
+      # cannot report on its own.
+      - name: The checker and its controls are present
+        run: |
+          set -euo pipefail
+          for f in launchpad/scripts/flaky_report_wiring.py \
+                   launchpad/scripts/test_flaky_report_wiring.py; do
+            [ -f "$f" ] || { echo "::error title=missing checker::$f is absent — this check cannot report on itself being deleted"; exit 1; }
+          done
+          echo "checker and controls present"
+
+      # THE CONTROLS RUN BEFORE THE CHECK.
+      #
+      # A green wiring check built on a checker whose own controls are broken is
+      # worth nothing. launchpad-pr-check.yml already discovers these via
+      # `unittest discover -s launchpad/scripts`, but this workflow must not
+      # depend on another one having run — required checks are independent.
+      - name: The checker's own controls pass
+        run: python3 -m unittest discover -s launchpad/scripts -t launchpad/scripts -p "test_flaky_report_wiring.py" -v
+
+      # Exit 0 wired, 1 disagreement, 3 could-not-check. All three of the last
+      # two fail the job, which is intended: "I could not check" must never be
+      # reported as "it is fine".
+      - name: Check the flaky-report wiring
+        run: python3 launchpad/scripts/flaky_report_wiring.py .

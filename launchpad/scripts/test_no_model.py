@@ -95,6 +95,9 @@ ALLOWLIST: dict[str, frozenset[str]] = {
 #: reason. Everything else is ours and must be on the allowlist.
 NOT_OURS = {
     "pr_body_check.py": "the PR-body check from #126; its imports are that task's business",
+    "flaky_report_wiring.py": "the INC-0001 flaky-report wiring check; a static "
+    "text comparison over playwright.config.ts and ci.yml, with its own controls "
+    "in test_flaky_report_wiring.py — not part of the pre-flight stage",
     "mutation_harness.py": "the evidence generator — it rewrites source by design, and "
     "its own imports are not part of the no-model claim",
     "security_audit.py": "the #62 security-audit harness entrypoint; a separate task, "
